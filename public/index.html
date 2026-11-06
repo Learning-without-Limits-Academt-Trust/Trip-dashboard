@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#00706A">
+  <title>LwLAT Trip Planner</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+  <header class="hdr">
+    <div class="hdr-in">
+      <a class="logo" href="#/"><img src="logo.svg" alt="Learning without Limits Academy Trust - home" width="130" height="50"></a>
+      <span class="divider" aria-hidden="true"></span>
+      <a class="product" href="#/">
+        <svg viewBox="0 0 26 26" aria-hidden="true"><path d="M2 14h5l3-7 5 13 3-6h6" fill="none" stroke="#ACCE33" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Trip Planner
+      </a>
+      <span class="hdr-school hidden" id="hdr-school"></span>
+      <span class="spacer"></span>
+      <div class="clock" id="clock" aria-label="Current time"></div>
+      <span id="hdr-actions"></span>
+    </div>
+  </header>
+  <main id="app" aria-live="polite"><p class="loading">Loading…</p></main>
+  <footer class="foot">Learning without Limits Academy Trust · <a href="https://lwlat.org.uk" target="_blank" rel="noopener">lwlat.org.uk</a></footer>
+  <div id="toast" role="status" aria-live="assertive"></div>
+  <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
+  <script src="app.js"></script>
+</body>
+</html>
