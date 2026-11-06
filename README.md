@@ -12,9 +12,26 @@ Trip registers for the trust's five schools.
 |---|---|---|
 | **Trust admin** | Microsoft sign-in | Set each school's email domains and trip organisers, add other trust admins, see every school's trips, see the full activity log |
 | **Trip organiser** (named per school in Trust admin) | Microsoft sign-in | Create trips for their school(s), add or remove staff, reset and resend passwords, change trip details, close, reopen and delete trips, see their schools' activity log |
+| **Attendance viewer** (named per school in Trust admin) | Microsoft sign-in | **Read-only.** See the school's **Trips out today** board and open any of that school's trips to watch the register live. Download the CSV/PDF. Can't mark, add, edit or delete anything |
 | **Staff on a trip** | Trip login (work email + personal password), **or** Microsoft sign-in | Only that trip: take registers, see medical and emergency contact details, change home arrangements, add check-ins, and add, edit or remove pupils (with a reason). They can't change trip details or staff, and can't delete trips |
 
 Trip logins work from **6am on the first day of the trip until midnight on the last day** (UK time). They stop early if the trip is closed, the person is removed, or their password is reset. Only addresses on an LwLAT email domain (set in Trust admin) can be added as trip staff.
+
+### Watching a trip from school: "Trips out today"
+
+Organisers and attendance viewers open their school from the home page. At the top is **Trips out today**, which refreshes every 10 seconds. There's one card per trip running today, showing:
+
+- the trip lead's name and **mobile** (tap to call);
+- how many children are on the trip, absent and left early, and the time of the last register activity;
+- a **red alert listing any children not yet seen** at the latest check-in, or not yet handed over or dismissed at the end of the day;
+- children **absent at the morning register** (for attendance coding), **left early**, **added on the day** or **removed**, with who did it and why;
+- each check-in's progress (e.g. "Lunchtime check-in: 24/28").
+
+**Open register** shows the full live register. Viewers see it read-only.
+
+### Trip lead mobile
+
+The trip lead's mobile number (work or personal) is **required** when a trip is created, so school can contact them in an emergency. Other staff can add theirs optionally. Organisers can edit numbers on Manage trip, and nobody can be made trip lead without one. Numbers are shown to trip staff, organisers and attendance viewers, and on the report.
 
 ### What's recorded
 
@@ -76,7 +93,7 @@ Then *Deploys → Trigger deploy*.
 1. Open the site and select **Sign in with Microsoft**. You're a trust admin because your email is in `TRUST_ADMIN_EMAILS`.
 2. Go to **Trust admin** and fill in:
    - **Trust-wide email domains**, e.g. `lwlat.org.uk`. Staff on these domains can go on any school's trip.
-   - **Each school's email domains** and its **trip organisers** (one email per line).
+   - **Each school's email domains**, its **trip organisers** and its **attendance viewers** (one email per line).
    - Any other **trust admins**.
 3. Save. Organisers can now sign in and create trips.
 
@@ -91,7 +108,7 @@ Link the Pulse tile to `https://<your-site>/?sso=1`. Staff already signed in to 
 1. Sign in, then choose the school and select **+ New trip**.
 2. Enter the trip name, venue and start and end dates. Tick the lunchtime check-in if you want one, and add any other check-ins.
 3. Upload the pupil CSV. The template is on the Trips page (**CSV template**) or in `public/trip-template.csv`. Check the preview and warnings.
-4. Add the **trip lead** and **other staff** (names and work emails).
+4. Add the **trip lead** (name, work email and **mobile**) and **other staff** (names, work emails and, optionally, mobiles).
 5. Select **Create trip and email staff**. Each person gets an email with the link, their email address and their personal password.
    - If email isn't set up yet, or an email fails, the passwords are shown to you **once** to pass on in person or by Teams.
    - **New password & email** on the Manage page issues a fresh password at any time. The old one stops working straight away.

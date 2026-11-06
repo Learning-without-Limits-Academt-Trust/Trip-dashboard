@@ -168,13 +168,14 @@ async function viewHome() {
   }
   const me = S.me;
   const mine = await api('/mytrips');
-  const schools = S.schools.filter(s => me.schools.includes(s.id));
-  app.innerHTML = `${topbar('', me.trustAdmin ? 'Trust admin' : schools.length ? 'Trip organiser' : 'Staff', '', `${greeting()}, <span class="grad">${firstName(me.name)}.</span>`)}
-    ${schools.length ? `<h2>Plan trips for</h2><div class="schools">${schools.map(s => `<a class="school" href="#/school/${s.id}" data-sid="${s.id}"><span class="pill">Open</span><span class="crest" aria-hidden="true">${esc(initials(s.name))}</span><b>${esc(s.name)}</b></a>`).join('')}</div>` : ''}
+  const schools = S.schools.filter(s => (me.viewSchools || []).includes(s.id));
+  const role = me.trustAdmin ? 'Trust admin' : me.schools.length ? 'Trip organiser' : schools.length ? 'Attendance' : 'Staff';
+  app.innerHTML = `${topbar('', role, '', `${greeting()}, <span class="grad">${firstName(me.name)}.</span>`)}
+    ${schools.length ? `<h2>Your schools</h2><p class="onbg-note">Open a school to see its trips out today, live.</p><div class="schools">${schools.map(s => `<a class="school" href="#/school/${s.id}" data-sid="${s.id}"><span class="pill">${me.schools.includes(s.id) ? 'Organiser' : 'View'}</span><span class="crest" aria-hidden="true">${esc(initials(s.name))}</span><b>${esc(s.name)}</b></a>`).join('')}</div>` : ''}
     <h2>Trips you're staffing</h2>
     ${mine.length ? `<div class="trips">${mine.map(tripCard).join('')}</div>` : `<div class="empty">You're not on any trips. When an organiser adds you to one, it will appear here and you'll get an email with your trip login.</div>`}
-    ${!schools.length && !me.trustAdmin ? `<div class="infobox">If you organise trips for your school, ask a trust admin to add you as a trip organiser.</div>` : ''}
-    <p class="footer-links">${schools.length ? '<a href="#/activity">Activity log</a>' : ''}${me.trustAdmin ? ' · <a href="#/trust">Trust admin</a>' : ''}</p>`;
+    ${!schools.length && !me.trustAdmin ? `<div class="infobox">If you organise trips, or need to watch trips from school (e.g. attendance), ask a trust admin to give you access.</div>` : ''}
+    <p class="footer-links">${me.schools.length ? '<a href="#/activity">Activity log</a>' : ''}${me.trustAdmin ? ' · <a href="#/trust">Trust admin</a>' : ''}</p>`;
   paintTiles();
 }
 function tripCard(t) {
@@ -232,7 +233,8 @@ async function viewTrust() {
       <p class="muted small">Only staff with an LwLAT email domain can be added to a trip. Trip organisers sign in with Microsoft to set up and manage that school's trips. Enter one email address per line.</p>
       ${S.schools.map(s => `<h3>${esc(s.name)}</h3><div class="grid2">
         <label class="field">Email domains<textarea name="dom_${s.id}" rows="2" placeholder="e.g. babington.lwlat.org.uk">${lines(c.domains[s.id])}</textarea></label>
-        <label class="field">Trip organisers<textarea name="org_${s.id}" rows="3" placeholder="name@school domain">${lines(c.organisers[s.id])}</textarea></label></div>`).join('')}
+        <label class="field">Trip organisers<span class="hint">Set up and manage trips.</span><textarea name="org_${s.id}" rows="3" placeholder="name@school domain">${lines(c.organisers[s.id])}</textarea></label>
+        <span></span><label class="field">Attendance viewers<span class="hint">Read-only: watch trips live from school (e.g. attendance team, office).</span><textarea name="view_${s.id}" rows="3" placeholder="name@school domain">${lines(c.viewers[s.id])}</textarea></label></div>`).join('')}
     </section><br>
     <section class="card" data-label="Access">
       <h2>Trust admins</h2>
@@ -243,8 +245,8 @@ async function viewTrust() {
   $('#trustform').addEventListener('submit', async e => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
-    const body = { trustDomains: fd.trustDomains, trustAdmins: fd.trustAdmins, domains: {}, organisers: {} };
-    for (const s of S.schools) { body.domains[s.id] = fd['dom_' + s.id]; body.organisers[s.id] = fd['org_' + s.id]; }
+    const body = { trustDomains: fd.trustDomains, trustAdmins: fd.trustAdmins, domains: {}, organisers: {}, viewers: {} };
+    for (const s of S.schools) { body.domains[s.id] = fd['dom_' + s.id]; body.organisers[s.id] = fd['org_' + s.id]; body.viewers[s.id] = fd['view_' + s.id]; }
     try { const r = await api('/trust/settings', { method: 'PUT', body }); toast(r.changes ? 'Settings saved' : 'No changes'); S.me = null; viewTrust(); }
     catch (err) { toast(err.message, true); }
   });
@@ -270,18 +272,74 @@ async function viewActivity() {
 /* ---------------- school trips list ---------------- */
 async function viewTrips(sid) {
   const sch = schoolOf(sid); if (!sch) { location.hash = '#/'; return; }
-  const trips = await api(`/s/${sid}/trips`);
+  const canPlan = S.me.trustAdmin || S.me.schools.includes(sid);
+  const [trips, live] = await Promise.all([api(`/s/${sid}/trips`), api(`/s/${sid}/trips/live`)]);
   const t0 = today();
   const active = trips.filter(t => t.status !== 'closed' && (t.endDate || t.date) >= t0).sort((a, b) => a.date.localeCompare(b.date));
   const other = trips.filter(t => !active.includes(t));
-  app.innerHTML = `${topbar(sch.name, 'Trip organiser', `<a class="btn" href="trip-template.csv" download>CSV template</a><a class="btn" href="#/activity">Activity log</a><a class="btn primary" href="#/school/${sid}/new">+ New trip</a>`)}
+  app.innerHTML = `${topbar(sch.name, canPlan ? 'Trip organiser' : 'Attendance view', canPlan ? `<a class="btn" href="trip-template.csv" download>CSV template</a><a class="btn" href="#/activity">Activity log</a><a class="btn primary" href="#/school/${sid}/new">+ New trip</a>` : '')}
+    <div class="row"><h2>Trips out today</h2><span class="spacer"></span><span class="sync" id="sync">Live</span></div>
+    <div id="board" class="board">${drawBoard(live)}</div>
     <h2>On now and upcoming</h2>
-    ${active.length ? `<div class="trips">${active.map(tripCard).join('')}</div>` : '<div class="empty">No trips coming up. Create one with <b>+ New trip</b>.</div>'}
+    ${active.length ? `<div class="trips">${active.map(tripCard).join('')}</div>` : `<div class="empty">No trips coming up.${canPlan ? ' Create one with <b>+ New trip</b>.' : ''}</div>`}
     ${other.length ? `<h2>Past and closed</h2><div class="trips">${other.map(tripCard).join('')}</div>` : ''}`;
+  S.poll = setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const l = await api(`/s/${sid}/trips/live`);
+      if ($('#board')) $('#board').innerHTML = drawBoard(l);
+      $('#sync') && ($('#sync').textContent = 'Live · updated ' + fmtTime(new Date().toISOString()), $('#sync').classList.remove('off'));
+    } catch { $('#sync') && ($('#sync').textContent = 'Offline - retrying…', $('#sync').classList.add('off')); }
+  }, 10000);
+}
+
+/* ---------------- Trips out today (office board) ---------------- */
+const tel = n => n ? `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>` : '';
+function drawBoard(live) {
+  if (!live.trips.length) return '<div class="empty">No trips out today.</div>';
+  return [...live.trips].sort((a, b) => (a.status === 'closed') - (b.status === 'closed')).map(boardCard).join(''); // live trips first
+}
+function boardCard(t) {
+  const cps = t.checkpoints, pupils = livePupils(t);
+  const who = p => `<li><b>${esc(p.firstName)} ${esc(p.lastName)}</b> <span class="muted">${esc([p.form || p.yearGroup, p.group].filter(Boolean).join(' · '))}</span>${p.allergies || p.medical ? ' <span class="flag allergy">Medical</span>' : ''}</li>`;
+  let li = -1; cps.forEach((cp, i) => { if (Object.keys(t.marks[cp.id] || {}).length) li = i; });
+  const allMarks = cps.flatMap(cp => Object.values(t.marks[cp.id] || {}));
+  const lastAt = allMarks.map(m => m.at).sort().pop();
+  const mo = cpStats(t, 0);
+  const absent = pupils.filter(p => (markOf(t, cps[0].id, p.id) || {}).status === 'absent');
+  const left = []; pupils.forEach(p => cps.forEach((cp, i) => { const m = markOf(t, cp.id, p.id); if (i > 0 && m && m.status === 'left') left.push({ p, cp, m }); }));
+  const added = pupils.filter(p => p.added), removed = t.pupils.filter(p => p.removed);
+  const lead = t.staff.find(s => s.role === 'lead');
+  let status;
+  if (t.status === 'closed') status = '<div class="bstatus ok">Trip closed</div>';
+  else if (li < 0) status = `<div class="bstatus wait">Morning register not started yet · ${pupils.length} pupils expected</div>`;
+  else {
+    const cp = cps[li], st = cpStats(t, li);
+    const missing = pupils.filter(p => { const s = pupilState(t, p, li); return !s.excluded && !s.mark; });
+    if (!missing.length) status = `<div class="bstatus ok">✓ All ${st.expected} accounted for at <b>${esc(cp.name)}</b></div>`;
+    else if (cp.kind === 'morning') status = `<div class="bstatus wait"><b>Morning register in progress:</b> ${st.present + st.other} of ${st.expected} marked</div>`;
+    else status = `<div class="bstatus bad" role="alert"><b>⚠ ${missing.length} not yet ${cp.kind === 'end' ? 'handed over / dismissed' : 'seen'} at ${esc(cp.name)}</b><ul class="names">${missing.map(who).join('')}</ul></div>`;
+  }
+  const section = (title, items, cls = '') => items.length ? `<details class="bsec ${cls}"><summary>${title} (${items.length})</summary><ul class="names">${items.join('')}</ul></details>` : '';
+  return `<article class="bcard">
+    <div class="bhead"><div><h3>${esc(t.name)}</h3><div class="muted small">${esc([t.venue, fmtDates(t)].filter(Boolean).join(' · '))}</div></div>
+      <a class="btn small primary" href="#/trip/${t.schoolId}/${t.id}">Open register</a></div>
+    ${lead ? `<div class="blead">Trip lead: <b>${esc(lead.name)}</b> ${tel(lead.phone)}</div>` : ''}
+    <div class="bstats">
+      <span><b>${mo.present}</b> on trip</span><span><b>${absent.length}</b> absent</span><span><b>${left.length}</b> left early</span>
+      <span class="muted">Last register activity: ${lastAt ? fmtTime(lastAt) : 'none yet'}</span>
+    </div>
+    ${status}
+    ${section('Absent at morning register', absent.map(who), 'att')}
+    ${section('Left the trip early', left.map(({ p, cp, m }) => `<li><b>${esc(p.firstName)} ${esc(p.lastName)}</b> <span class="muted">at ${esc(cp.name)}, ${fmtTime(m.at)}, marked by ${esc(m.by)}</span></li>`))}
+    ${section('Added on the day', added.map(p => `<li><b>${esc(p.firstName)} ${esc(p.lastName)}</b> <span class="muted">by ${esc(p.added.by)}, ${fmtTime(p.added.at)}${p.added.reason ? ' - ' + esc(p.added.reason) : ''}</span></li>`))}
+    ${section('Removed from trip', removed.map(p => `<li><b>${esc(p.firstName)} ${esc(p.lastName)}</b> <span class="muted">by ${esc(p.removed.by)}, ${fmtTime(p.removed.at)}${p.removed.reason ? ' - ' + esc(p.removed.reason) : ''}</span></li>`))}
+    <div class="bchecks">${cps.map((cp, i) => { const s = cpStats(t, i), n = s.present + s.other; return `<span class="${n === s.expected && s.expected ? 'done' : n ? 'part' : ''}">${esc(cp.name)}: ${n}/${s.expected}</span>`; }).join('')}</div>
+  </article>`;
 }
 
 /* ---------------- new trip ---------------- */
-const staffRow = (i, s = {}) => `<div class="staffrow" data-i="${i}"><input type="text" name="sname" placeholder="Name" value="${esc(s.name)}" aria-label="Staff name"><input type="text" inputmode="email" name="semail" placeholder="Work email" value="${esc(s.email)}" aria-label="Staff email"><button type="button" class="btn small" data-act="rmrow" aria-label="Remove row">✕</button></div>`;
+const staffRow = (i, s = {}) => `<div class="staffrow staffrow4" data-i="${i}"><input type="text" name="sname" placeholder="Name" value="${esc(s.name)}" aria-label="Staff name"><input type="text" inputmode="email" name="semail" placeholder="Work email" value="${esc(s.email)}" aria-label="Staff email"><input type="tel" name="sphone" placeholder="Mobile (optional)" value="${esc(s.phone)}" aria-label="Staff mobile"><button type="button" class="btn small" data-act="rmrow" aria-label="Remove row">✕</button></div>`;
 function viewNewTrip(sid) {
   const sch = schoolOf(sid);
   S.preview = null;
@@ -306,7 +364,8 @@ function viewNewTrip(sid) {
       <h2>3. Staff going on the trip</h2>
       <p class="muted small">Use LwLAT work email addresses. ${S.mail ? 'Each person is emailed their own trip password when you create the trip.' : 'Email isn\'t set up yet, so you\'ll be shown each person\'s password to pass on.'}</p>
       <h3>Trip lead</h3>
-      <div class="staffrow"><input type="text" name="leadName" placeholder="Name" required aria-label="Trip lead name"><input type="text" inputmode="email" name="leadEmail" placeholder="Work email" required aria-label="Trip lead email"><span></span></div>
+      <p class="muted small">The trip lead's mobile (work or personal) is required, so school can reach them in an emergency. It's shown to staff on the trip, organisers and attendance viewers.</p>
+      <div class="staffrow staffrow4"><input type="text" name="leadName" placeholder="Name" required aria-label="Trip lead name"><input type="text" inputmode="email" name="leadEmail" placeholder="Work email" required aria-label="Trip lead email"><input type="tel" name="leadPhone" placeholder="Mobile (required)" required aria-label="Trip lead mobile"><span></span></div>
       <h3>Other staff</h3>
       <div id="staffrows">${staffRow(0)}${staffRow(1)}</div>
       <button type="button" class="btn small" data-act="addrow">+ Add another</button>
@@ -334,10 +393,10 @@ function viewNewTrip(sid) {
     e.preventDefault();
     if (!S.preview) return toast('Upload the pupil CSV first.', true);
     const form = e.target, fd = Object.fromEntries(new FormData(form));
-    const staff = [...form.querySelectorAll('#staffrows .staffrow')].map(r => ({ name: r.querySelector('[name=sname]').value, email: r.querySelector('[name=semail]').value })).filter(s => s.name.trim() || s.email.trim());
+    const staff = [...form.querySelectorAll('#staffrows .staffrow')].map(r => ({ name: r.querySelector('[name=sname]').value, email: r.querySelector('[name=semail]').value, phone: r.querySelector('[name=sphone]').value })).filter(s => s.name.trim() || s.email.trim());
     const btn = $('#create'); btn.disabled = true; btn.textContent = 'Creating…';
     try {
-      const r = await api(`/s/${sid}/trips`, { method: 'POST', body: { name: fd.name, date: fd.date, endDate: fd.endDate || fd.date, venue: fd.venue, lunch: !!fd.lunch, extra: String(fd.extra || '').split('\n').map(s => s.trim()).filter(Boolean), csv: S.preview.csv, lead: { name: fd.leadName, email: fd.leadEmail }, staff } });
+      const r = await api(`/s/${sid}/trips`, { method: 'POST', body: { name: fd.name, date: fd.date, endDate: fd.endDate || fd.date, venue: fd.venue, lunch: !!fd.lunch, extra: String(fd.extra || '').split('\n').map(s => s.trim()).filter(Boolean), csv: S.preview.csv, lead: { name: fd.leadName, email: fd.leadEmail, phone: fd.leadPhone }, staff } });
       showIssued(r, `/trip/${sid}/${r.id}`, 'Trip created');
     } catch (err) { btn.disabled = false; btn.textContent = 'Create trip'; showError($('#err'), err.message); }
   });
@@ -389,15 +448,16 @@ async function viewTrip(sid, tid) {
     S.cpId = t.checkpoints[idx >= 0 ? idx : 0].id;
   }
   const groups = [...new Set(livePupils(t).map(p => p.group).filter(Boolean))].sort();
-  const isTripLogin = S.me.kind === 'trip';
+  const isTripLogin = S.me.kind === 'trip', ro = !t.perm.act;
   const lead = t.staff.find(s => s.role === 'lead');
-  app.innerHTML = `${topbar(t.name, `${fmtDates(t)}${t.venue ? ' · ' + t.venue : ''}`, isTripLogin ? '' : `<a class="btn small" href="#/${t.perm.manage ? 'school/' + sid : ''}">${t.perm.manage ? 'All trips' : 'Home'}</a>`)}
+  app.innerHTML = `${topbar(t.name, `${fmtDates(t)}${t.venue ? ' · ' + t.venue : ''}`, isTripLogin ? '' : `<a class="btn small" href="#/${t.perm.manage || ro ? 'school/' + sid : ''}">${t.perm.manage || ro ? 'All trips' : 'Home'}</a>`)}
     ${t.status === 'closed' ? '<div class="warnbox"><b>This trip is closed.</b> Registers are read-only.' + (t.perm.manage ? ' Reopen it from Manage trip.' : '') + '</div>' : ''}
-    <div class="whoami no-print">You: <b>${esc(S.me.name)}</b> (${esc(S.me.email)})${isTripLogin ? ` · trip login until ${new Date(t.window.end - 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}${lead ? ` · Trip lead: <b>${esc(lead.name)}</b>` : ''}</div>
+    ${ro ? '<div class="infobox"><b>View only.</b> You\'re watching this trip live. Registers update every few seconds.</div>' : ''}
+    <div class="whoami no-print">You: <b>${esc(S.me.name)}</b> (${esc(S.me.email)})${isTripLogin ? ` · trip login until ${new Date(t.window.end - 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}${lead ? ` · Trip lead: <b>${esc(lead.name)}</b> ${tel(lead.phone)}` : ''}</div>
     <div class="toolbar no-print">
       <a class="btn small" href="/api${tripPath(sid, tid)}/export.csv">Download CSV</a>
       <a class="btn small" href="#/trip/${sid}/${tid}/report">PDF report</a>
-      ${t.status !== 'closed' ? '<button class="btn small" data-act="addpupil">+ Add pupil</button>' : ''}
+      ${t.status !== 'closed' && !ro ? '<button class="btn small" data-act="addpupil">+ Add pupil</button>' : ''}
       <a class="btn small" href="#/trip/${sid}/${tid}/manage">${t.perm.manage ? 'Manage trip' : 'Trip info'}</a>
       <span class="spacer"></span><span class="sync" id="sync">Live</span>
     </div>
@@ -453,7 +513,7 @@ function drawRegister() {
   const t = S.trip; if (!t || !$('#list')) return;
   const idx = t.checkpoints.findIndex(c => c.id === S.cpId);
   const cp = t.checkpoints[idx];
-  const closed = t.status === 'closed';
+  const closed = t.status === 'closed' || !t.perm.act;
   $('#tabs').innerHTML = t.checkpoints.map((c, i) => {
     const st = cpStats(t, i);
     return `<button class="tab ${c.id === S.cpId ? 'active' : ''}" role="tab" data-act="cp" data-id="${c.id}"><b>${esc(c.name)}</b><span>${st.present + st.other}/${st.expected} marked</span></button>`;
@@ -503,7 +563,6 @@ function drawRegister() {
 
 function details(p, cp, s, closed) {
   const t = S.trip;
-  const tel = n => n ? `<a href="tel:${esc(n.replace(/[^\d+]/g, ''))}">${esc(n)}</a>` : '';
   const dl = [
     ['Medical', p.medical], ['Allergies', p.allergies], ['Medication', p.medication],
     ['Emergency contact', p.ec1Name || p.ec1Phone ? `${esc(p.ec1Name)}${p.ec1Relation ? ' (' + esc(p.ec1Relation) + ')' : ''} ${tel(p.ec1Phone)}` : '', true],
@@ -520,7 +579,7 @@ function details(p, cp, s, closed) {
   return `<div class="details">
     <dl>${dl.map(([k, v, raw]) => `<dt>${k}</dt><dd>${raw ? v : esc(v)}</dd>`).join('')}</dl>
     ${hist ? `<ul class="history">${hist}</ul>` : ''}
-    <div class="actions">${actions}${b('home', 'Change home arrangement')}${b('editpupil', 'Edit details')}${b('rmpupil', 'Remove from trip', 'danger')}</div></div>`;
+    ${t.perm.act ? `<div class="actions">${actions}${b('home', 'Change home arrangement')}${b('editpupil', 'Edit details')}${b('rmpupil', 'Remove from trip', 'danger')}</div>` : ''}</div>`;
 }
 
 async function setMark(pid, status) {
@@ -599,23 +658,23 @@ async function viewManage(sid, tid) {
     </section>
 
     <h2>Staff on this trip</h2>
-    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Trip login email</th>${m ? '<th></th>' : ''}</tr></thead><tbody>
-      ${t.staff.map(s => `<tr><td><b>${esc(s.name)}</b><br><span class="muted small">${esc(s.email)}</span></td><td>${s.role === 'lead' ? '<span class="chip today">Trip lead</span>' : 'Staff'}</td>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Mobile</th><th>Role</th><th>Trip login email</th>${m ? '<th></th>' : ''}</tr></thead><tbody>
+      ${t.staff.map(s => `<tr><td><b>${esc(s.name)}</b><br><span class="muted small">${esc(s.email)}</span></td><td>${s.phone ? tel(s.phone) : '<span class="muted">-</span>'}</td><td>${s.role === 'lead' ? '<span class="chip today">Trip lead</span>' : 'Staff'}</td>
         <td class="small">${s.emailStatus === 'sent' ? 'Sent ' + fmtDateTime(s.emailedAt) : esc(s.emailStatus || '')}</td>
-        ${m ? `<td class="row">${s.role !== 'lead' ? `<button class="btn small" data-act="makelead" data-sid="${s.id}">Make lead</button>` : ''}<button class="btn small" data-act="resend" data-sid="${s.id}">New password${S.mail ? ' & email' : ''}</button><button class="btn small danger" data-act="rmstaff" data-sid="${s.id}">Remove</button></td>` : ''}</tr>`).join('')}
+        ${m ? `<td class="row"><button class="btn small" data-act="editstaff" data-sid="${s.id}">Edit</button>${s.role !== 'lead' ? `<button class="btn small" data-act="makelead" data-sid="${s.id}">Make lead</button>` : ''}<button class="btn small" data-act="resend" data-sid="${s.id}">New password${S.mail ? ' & email' : ''}</button><button class="btn small danger" data-act="rmstaff" data-sid="${s.id}">Remove</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>
-    ${m ? `<form class="staffrow addstaff" id="addstaff"><input type="text" name="name" placeholder="Name" required aria-label="Name"><input type="text" inputmode="email" name="email" placeholder="Work email" required aria-label="Email"><button class="btn primary">+ Add staff</button></form>` : ''}
+    ${m ? `<form class="staffrow staffrow4 addstaff" id="addstaff"><input type="text" name="name" placeholder="Name" required aria-label="Name"><input type="text" inputmode="email" name="email" placeholder="Work email" required aria-label="Email"><input type="tel" name="phone" placeholder="Mobile (optional)" aria-label="Mobile"><button class="btn primary">+ Add staff</button></form>` : ''}
     ${!lead ? '<div class="warnbox">This trip has no trip lead.</div>' : ''}
 
     <h2>Check-ins</h2>
     <div class="table-wrap"><table><tbody>${t.checkpoints.map(c => `<tr><td><b>${esc(c.name)}</b></td><td class="muted">${c.kind === 'custom' ? 'Optional' + (c.by ? ', added by ' + esc(c.by) : '') : 'Always included'}</td>
       <td>${m && c.kind === 'custom' ? `<button class="btn small danger" data-act="delcp" data-id="${c.id}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
 
-    <div class="row"><h2>Pupils (${t.pupils.length - removed.length})</h2><span class="spacer"></span>${t.status !== 'closed' ? '<button class="btn small" data-act="addpupil">+ Add pupil</button>' : ''}</div>
+    <div class="row"><h2>Pupils (${t.pupils.length - removed.length})</h2><span class="spacer"></span>${t.status !== 'closed' && t.perm.act ? '<button class="btn small" data-act="addpupil">+ Add pupil</button>' : ''}</div>
     <div class="table-wrap"><table><thead><tr><th>Name</th><th>Form</th><th>Group</th><th>Home</th><th>Medical</th><th></th></tr></thead><tbody>
       ${livePupils(t).sort((a, b) => a.lastName.localeCompare(b.lastName)).map(p => `<tr><td>${esc(p.firstName)} ${esc(p.lastName)}${p.added ? `<br><span class="small muted">Added by ${esc(p.added.by)}, ${fmtDateTime(p.added.at)}</span>` : ''}</td><td>${esc(p.form)}</td><td>${esc(p.group)}</td>
       <td>${p.home === 'own' ? 'Own way' : p.home === 'collected' ? 'Collected' : '<span class="muted">-</span>'}</td><td>${flags(p)}</td>
-      <td class="row"><button class="btn small" data-act="editpupil" data-pid="${p.id}">Edit</button><button class="btn small danger" data-act="rmpupil" data-pid="${p.id}">Remove</button></td></tr>`).join('')}
+      <td class="row">${t.perm.act ? `<button class="btn small" data-act="editpupil" data-pid="${p.id}">Edit</button><button class="btn small danger" data-act="rmpupil" data-pid="${p.id}">Remove</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
     ${removed.length ? `<h3 class="onbg">Removed from trip</h3><div class="table-wrap"><table><tbody>${removed.map(p => `<tr><td>${esc(p.firstName)} ${esc(p.lastName)}</td><td>Removed by <b>${esc(p.removed.by)}</b> (${esc(p.removed.email)}), ${fmtDateTime(p.removed.at)}${p.removed.reason ? ' - ' + esc(p.removed.reason) : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
@@ -658,7 +717,7 @@ async function viewReport(sid, tid) {
     <section class="report card" data-label="Attendance report">
       <h1>${esc(schoolOf(sid).name)}: ${esc(t.name)}</h1>
       <p class="meta-line">${esc(fmtDates(t))}${t.venue ? ' · ' + esc(t.venue) : ''} · ${pupils.length} pupils · Set up by ${esc(t.createdBy.name)} (${esc(t.createdBy.email)})<br>
-      Trip lead: ${lead ? esc(lead.name) : '-'} · Staff: ${t.staff.filter(s => s.role !== 'lead').map(s => esc(s.name)).join(', ') || '-'}<br>Generated ${fmtDateTime(new Date().toISOString())} by ${esc(S.me.name)}</p>
+      Trip lead: ${lead ? esc(lead.name) + (lead.phone ? ' (' + esc(lead.phone) + ')' : '') : '-'} · Staff: ${t.staff.filter(s => s.role !== 'lead').map(s => esc(s.name)).join(', ') || '-'}<br>Generated ${fmtDateTime(new Date().toISOString())} by ${esc(S.me.name)}</p>
       <div class="table-wrap"><table><thead><tr><th>#</th><th>Pupil</th><th>Adm no</th><th>Form</th>${t.checkpoints.map(c => `<th>${esc(c.name)}</th>`).join('')}<th>Going home</th></tr></thead><tbody>
       ${pupils.map((p, i) => `<tr><td>${i + 1}</td><td><b>${esc(p.lastName)}, ${esc(p.firstName)}</b>${p.added ? '<br><span class="muted">Added on the day</span>' : ''}</td><td>${esc(p.admissionNo)}</td><td>${esc(p.form || p.yearGroup)}</td>${t.checkpoints.map(c => cell(c, p)).join('')}
         <td>${p.home === 'collected' ? 'Collected' + (p.collector ? ' by ' + esc(p.collector) : '') : p.home === 'own' ? 'Own way' : '-'}</td></tr>`).join('')}
@@ -713,6 +772,15 @@ app.addEventListener('click', async e => {
         await api(`${base}/checkpoints/${el.dataset.id}`, { method: 'DELETE' }); after(); break;
       case 'togglestatus':
         await api(base, { method: 'PUT', body: { status: t.status === 'closed' ? 'active' : 'closed' } }); toast(t.status === 'closed' ? 'Trip reopened' : 'Trip closed. Trip logins have stopped working.'); after(); break;
+      case 'editstaff': {
+        const s = t.staff.find(x => x.id === el.dataset.sid);
+        openDialog(`<h2>Contact details: ${esc(s.name)}</h2>
+          <label class="field">Name<input type="text" name="name" value="${esc(s.name)}" required maxlength="80"></label>
+          <label class="field">Mobile (work or personal)${s.role === 'lead' ? '<span class="hint">Required for the trip lead.</span>' : ''}<input type="tel" name="phone" value="${esc(s.phone)}" ${s.role === 'lead' ? 'required' : ''}></label>
+          <p class="muted small">Email can't be changed here because it's their login. To use a different email, remove them and add them again.</p>
+          ${dlgButtons('Save')}`, async fd => { await api(`${base}/staff/${s.id}`, { method: 'PUT', body: fd }); toast('Saved'); after(); });
+        break;
+      }
       case 'makelead': await api(`${base}/staff/${el.dataset.sid}/lead`, { method: 'POST' }); toast('Trip lead changed'); after(); break;
       case 'resend': {
         const s = t.staff.find(x => x.id === el.dataset.sid);
