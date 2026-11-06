@@ -1,0 +1,13 @@
+{
+  "name": "trust-trip-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Trip registers for the trust's schools: CSV upload, morning/optional/end-of-day check-ins, home arrangements, exports.",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.7"
+  }
+}
