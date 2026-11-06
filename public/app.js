@@ -128,6 +128,7 @@ async function render() {
       if (!(a === 'trip' && b === schoolId && c === tripId)) { location.hash = `#/trip/${schoolId}/${tripId}`; return; }
     }
     setHeader(a === 'school' || a === 'trip' ? b : null);
+    $('.pulse-link').classList.toggle('hidden', !!a); // "Back to Pulse" on the home page only
     if (!a) return viewHome();
     if (a === 'day') return viewDayLogin();
     if (a === 'signin-failed') return viewSigninFailed();
@@ -149,7 +150,7 @@ async function render() {
 async function viewHome() {
   if (!S.me) {
     app.innerHTML = `
-      <section class="pagehead"><div><span class="eyebrow">LwLAT Trip Planner · 5 academies · 1 trust</span><h1>Where's the trip <span class="grad">today?</span></h1><p class="sub">Plan trips, take registers on the day and know every child is accounted for.</p></div></section>
+      <section class="pagehead"><div><h1>Where's the trip <span class="grad">today?</span></h1><p class="sub">Plan trips, take registers on the day and know every child is accounted for.</p></div></section>
       <div class="doors">
         <section class="card" data-label="Organisers">
           <h2>Plan and manage trips</h2>
@@ -168,7 +169,7 @@ async function viewHome() {
   const me = S.me;
   const mine = await api('/mytrips');
   const schools = S.schools.filter(s => me.schools.includes(s.id));
-  app.innerHTML = `${topbar('', me.trustAdmin ? 'Trust admin' : schools.length ? 'Trip organiser' : 'LwLAT staff', '', `${greeting()}, <span class="grad">${firstName(me.name)}.</span>`)}
+  app.innerHTML = `${topbar('', me.trustAdmin ? 'Trust admin' : schools.length ? 'Trip organiser' : 'Staff', '', `${greeting()}, <span class="grad">${firstName(me.name)}.</span>`)}
     ${schools.length ? `<h2>Plan trips for</h2><div class="schools">${schools.map(s => `<a class="school" href="#/school/${s.id}" data-sid="${s.id}"><span class="pill">Open</span><span class="crest" aria-hidden="true">${esc(initials(s.name))}</span><b>${esc(s.name)}</b></a>`).join('')}</div>` : ''}
     <h2>Trips you're staffing</h2>
     ${mine.length ? `<div class="trips">${mine.map(tripCard).join('')}</div>` : `<div class="empty">You're not on any trips. When an organiser adds you to one, it will appear here and you'll get an email with your trip login.</div>`}

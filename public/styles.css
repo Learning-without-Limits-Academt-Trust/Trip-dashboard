@@ -284,3 +284,6 @@ dialog .table-wrap { box-shadow: none; border: 1px solid var(--line); }
 }
 .product { white-space: nowrap; }
 @media (max-width: 420px) { .clock { display: none; } .product { font-size: 1rem; } .product svg { width: 20px; height: 20px; } .hdr-in { gap: 10px; } .logo img { width: 92px; } }
+.pulse-link { flex: none; }
+#hdr-actions:empty { display: none; }
+@media (max-width: 520px) { .pulse-link .long { display: none; } .hdr-in .btn.small { padding: 4px 10px; } }
